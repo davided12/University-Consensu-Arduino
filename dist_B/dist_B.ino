@@ -7,13 +7,13 @@
 DHT dht(DHTPIN, DHTTYPE);
 
 // numero in - neig.
-const unsigned int in_n = 2;
+const unsigned int in_n = 3;
 unsigned int in_n_online = 0;
 
-char my_label = 'a';
+char my_label = 'e';
 
 // lista degli in - neig.
-char in_label[] = {'c','e'};
+char in_label[] = {'a','b','d'};
 
 // contenitore dei messaggi in arrivo
 float data[in_n];
@@ -189,7 +189,7 @@ void loop() {
   // imposto lo stato iniziale (50 secondi)
   if (skip % 100 == 0)
 //  state = dht.readTemperature();
-    state = 40;
+    state = 20;
   //aspetti 5 secondi  
   if (skip % 10 != 0)
     return;
