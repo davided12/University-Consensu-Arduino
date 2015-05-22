@@ -7,13 +7,13 @@
 DHT dht(DHTPIN, DHTTYPE);
 
 // numero in - neig.
-const unsigned int in_n = 3;
+const unsigned int in_n = 1;
 unsigned int in_n_online = 0;
 
-char my_label = 'e';
+char my_label = 'b';
 
 // lista degli in - neig.
-char in_label[] = {'a','b','d'};
+char in_label[] = {'e'};
 
 // contenitore dei messaggi in arrivo
 float data[in_n];
