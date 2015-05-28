@@ -10,9 +10,12 @@ DHT dht(DHTPIN, DHTTYPE);
 const unsigned int in_n = 2;
 
 char my_label = 'a';
+//char my_label = 'b';
 
 // lista degli in - neig.
-char in_label[] = {'c','e'};
+char in_label[] = {'b','e'};
+//char in_label[] = {'a','e'};
+
 
 // contenitore dei messaggi in arrivo
 float data[in_n];
@@ -20,15 +23,21 @@ float data[in_n];
 // stato corrente
 float state = 0;
 
+// ultimo valore letto
+float value = 0;
+
+// controllo se è la prima iterazione
+boolean firstSend = true;
+
 // dati mqtt
-#define APssid              "distributed"              //wifi network ssid
-#define APpsw               "distributed"          //wifi netwrok password
+#define APssid              "SemeraroWIFI"              //wifi network ssid
+#define APpsw               "sempassword"          //wifi netwrok password
 #define MQTTid              my_label        //id of this mqtt client
-#define MQTTip              "test.mosquitto.org"     //ip address or hostname of the mqtt broker
+#define MQTTip              "suxsem.dlinkddns.com"     //ip address or hostname of the mqtt broker
 #define MQTTport            1883                    //port of the mqtt broker
-#define MQTTuser            ""               //username of this mqtt client
-#define MQTTpsw             ""             //password of this mqtt client
-#define MQTTalive           120                     //mqtt keep alive interval (seconds)
+#define MQTTuser            "test"               //username of this mqtt client
+#define MQTTpsw             "test"             //password of this mqtt client
+#define MQTTalive           30                     //mqtt keep alive interval (seconds)
 #define MQTTretry           10                      //time to wait before reconnect if connection drops (seconds)
 #define MQTTqos             2                       //quality of service for subscriptions and publishes
 #define esp8266reset        3                      //arduino pin connected to esp8266 reset pin (analog pin suggested due to higher impedance)
@@ -41,9 +50,6 @@ boolean connected = false;
 void onConnected();
 void onDisconnected();
 void onMessage();
-
-void onDisconnected() {                             //on disconnected callback
-}
 
 #define buffer_l 50
 #define replyTimeout 5000
@@ -154,18 +160,27 @@ void setup() {
 }
 
 void onConnected() {                                //on connected callback
+  debugSerial.println("CONNESSO");
   for (unsigned int i = 0; i < in_n; i++) {
     debugSerial.print("sottoscrivo " );
     debugSerial.println(in_label[i]);
     mqttSubscribe("test/distributed/" + String(in_label[i]));
-
-    for (long time = millis(); time + 10000 < millis();) {
-      do
-        checkComm();
-      while(!connected);
-    }    
-    state = dht.readTemperature();    
   }
+
+  // un po' di ritardo per ricevere tutti i retain
+  debugSerial.println("1");
+  long waitUntil = millis() + 10000;
+  while (millis() < waitUntil) {
+    do
+      checkComm();
+    while(!connected);
+  }
+
+//    value = dht.readTemperature();    
+  value = 20;
+//  value = 40;
+  state = value;
+    
 }
 
 void onMessage(String topic, String message) {      //new message callback
@@ -176,12 +191,19 @@ void onMessage(String topic, String message) {      //new message callback
   sender.toCharArray(sender_c, 2);
   for (unsigned int i = 0; i < in_n; i++) {
     if (in_label[i] == sender_c[0]) {
+      debugSerial.println(message);
       data[i] = message.toFloat();      
     }
   }
 }
 
-void loop() {
+void onDisconnected() {                             //on disconnected callback
+  debugSerial.println("DISCONNESSO");
+}
+
+
+void loop() { 
+  
   do                                                  //
     checkComm();                                      //
   while(!connected);                                  //check for incoming messages
@@ -205,8 +227,14 @@ void loop() {
       state = state + weight * data[i];
   } 
   state = state + weight * old_state;
+    
+  if (firstSend) {
+    mqttPublish("test/distributed/" + String(my_label), String(value), 1);
+    firstSend = false;
+  }
   
   mqttPublish("test/distributed/" + String(my_label), String(state), 1);
+  debugSerial.println("mando: " + String(state));
   
   for (unsigned int i = 0; i < in_n; i++) {
     if (data[i] > -274)
