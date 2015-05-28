@@ -6,13 +6,13 @@
   DHT dht(DHTPIN, DHTTYPE);
   
   // dati mqtt
-  #define APssid              "SemeraroWIFI"              //wifi network ssid
-  #define APpsw               "sempassword"          //wifi netwrok password
+  #define APssid              "Telecom-75286748"              //wifi network ssid
+  #define APpsw               "routerpassw"          //wifi netwrok password
   #define MQTTid              my_label        //id of this mqtt client
-  #define MQTTip              "suxsem.dlinkddns.com"     //ip address or hostname of the mqtt broker
+  #define MQTTip              "192.168.10.1"     //ip address or hostname of the mqtt broker
   #define MQTTport            1883                    //port of the mqtt broker
-  #define MQTTuser            "test"               //username of this mqtt client
-  #define MQTTpsw             "test"             //password of this mqtt client
+  #define MQTTuser            ""               //username of this mqtt client
+  #define MQTTpsw             ""             //password of this mqtt client
   #define MQTTalive           30                     //mqtt keep alive interval (seconds)
   #define MQTTretry           10                      //time to wait before reconnect if connection drops (seconds)
   #define MQTTqos             2                       //quality of service for subscriptions and publishes
@@ -24,22 +24,23 @@
 
 /*  ######################### DEFINIZIONI ALGORITMO ######################### */
 
-#define my_label 'a'
-#define sensor 20
+#define my_label 'b'
+#define sensor 40
 
 // numero in - neig.
 #define in_n 2
 
 // lista degli in - neig.
-const char in_label[] = {'b','e'};
+const char in_label[] = {'a','e'};
 
 // contenitore dei messaggi in arrivo
 float data[in_n];
+char  sync[in_n];
 
 // stato corrente
 float state;
 
-// ultimo valore letto
+// ultimo valore letto (r(t-h))
 float input;
 
 void setup() {
@@ -50,7 +51,7 @@ void setup() {
     esp8266serial.setTimeout(500);                       //start serial
 
     for (unsigned int i = 0; i < in_n; i++) {
-      data[i] = -274;
+      sync[i] = 'F';
     }
 
     input = readInput();
@@ -65,10 +66,14 @@ void onConnected() {                                //on connected callback
   for (unsigned int i = 0; i < in_n; i++) {
     debugSerial.print("subscribing: " );
     debugSerial.println(in_label[i]);
-    mqttSubscribe("test/distributed/" + String(in_label[i]));
+    mqttSubscribe(String(in_label[i]) + "_d");
+    mqttSubscribe(String(in_label[i]) + "_s");    
   }
-
-  // un po' di ritardo per ricevere tutti i retain
+  
+  //informo i vicini che sono online
+  mqttPublish(String(my_label) + "_s", "B", 1);
+  
+  // un po' di ritardo per ricevere tutti i retains
   debugSerial.println("-- WAIT RETAINS...");
   long waitUntil = millis() + 10000;
   while (millis() < waitUntil) {
@@ -76,7 +81,16 @@ void onConnected() {                                //on connected callback
       checkComm();
     while(!connected);
   }
+  
+  mqttPublish(String(my_label) + "_d", String(state), 1);  
+  mqttPublish(String(my_label) + "_s", "R", 1);
 
+/*
+  for (unsigned int i = 0; i < in_n; i++) {
+    if (data[i] > -274)
+      data[i] = -275;
+  }
+*/
 }
 
 void onMessage(String topic, String message) {      //new message callback
@@ -85,12 +99,18 @@ void onMessage(String topic, String message) {      //new message callback
   String sender = topic.substring(last_slash_pos + 1);
   debugSerial.print(sender);
   debugSerial.print("': ");
-  char sender_c[2];
-  sender.toCharArray(sender_c, 2);
+  debugSerial.println(message);
+  char sender_c[4];
+  sender.toCharArray(sender_c, 4);
   for (unsigned int i = 0; i < in_n; i++) {
-    if (in_label[i] == sender_c[0]) {
-      debugSerial.println(message);
-      data[i] = message.toFloat();      
+    if (sender_c[0] == in_label[i]) {
+      if (sender_c[2] == 'd') {
+        data[i] = message.toFloat();
+      } else if (sender_c[2] == 's') {
+        char sync_msg[2];
+        message.toCharArray(sync_msg, 2);
+        sync[i] = sync_msg[0];
+      }
     }
   }
 }
@@ -108,44 +128,50 @@ float readInput() {
 }
 
 void loop() { 
+    
+  debugSerial.println("all data received, start new step");
   
-  do                                                  //
-    checkComm();                                      //
-  while(!connected);                                  //check for incoming messages
-  
+  //aggiorno state
   unsigned int in_n_online = 0;
   for (unsigned int i = 0; i < in_n; i++) {
-    if (data[i] == -275)
-      return;
-    if (data[i] > -274)
+    if (sync[i] == 'R')
       in_n_online++;
-  }
-  
-  //arrivo qui solo se tutti quelli online hanno inviato
-  
-  debugSerial.println("all data received, start new step");
-  //aggiorno state
+  }  
   float weight = 1.0 / (in_n_online + 1);
 
+  // newState: x(t+h)
   float newState = state;
   for (unsigned int i = 0; i < in_n; i++) {
-    if (data[i] > -274)
+    if (sync[i] == 'R')
       newState += weight * (data[i] - state);
   }
-  
+  // delta r: newInput - input (=dato letto)
   float newInput = readInput();
   state = newState + newInput - input;
   input = newInput;
   
   debugSerial.println("end step");
       
-  mqttPublish("test/distributed/" + String(my_label), String(state), 1);
+  mqttPublish(String(my_label) + "_d", String(state), 1);
+  mqttPublish(String(my_label) + "_s", "R", 1);  
+  
   debugSerial.println("sending: " + String(state));
   
   for (unsigned int i = 0; i < in_n; i++) {
-    if (data[i] > -274)
-      data[i] = -275;
-  }  
+    if (sync[i] == 'R')
+      sync[i] = 'B';
+  }
+
+  checkReady:
+  
+  do                                                  //
+    checkComm();                                      //
+  while(!connected);                                  //check for incoming messages
+  
+  for (unsigned int i = 0; i < in_n; i++) {
+    if (sync[i] == 'B')
+      goto checkReady;
+  }
   
 }
 
@@ -189,13 +215,16 @@ void checkComm() {
         delay(50);
         pinMode(esp8266reset, INPUT);
         lastAliveCheck = millis();
-        connected = false;
-        onDisconnected(); 
+        if (connected) {
+          connected = false;          
+          onDisconnected(); 
+        }       
     }
     if (esp8266serial.find("[(")) {
         esp8266serial.readBytes(cb, 1);
         if (cb[0] == 'r') {
             //ready
+            debugSerial.println("-- ESP RESET");
             if (connected) {
                 connected = false;
                 onDisconnected();
@@ -258,6 +287,7 @@ void mqttPublish(String topic, String message, byte retain) {
     esp8266serial.println("mqttPublish(\"" + topic + "\", \"" + message + "\",  " + MQTTqos + ", " + retain + ")");                
     esp8266serial.flush();
     waitForSuccess();
+    delay(500);
 }
 void mqttSubscribe(String topic) {
     if (!connected)
@@ -266,6 +296,7 @@ void mqttSubscribe(String topic) {
     esp8266serial.println("mqttSubscribe(\"" + String(topic) + "\", " + MQTTqos + ")");
     esp8266serial.flush();
     waitForSuccess();
+    delay(500);    
 }
 //  ####    END OF UNTOUCHABLE CODE    ####
 
