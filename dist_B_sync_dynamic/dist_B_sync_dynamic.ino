@@ -3,11 +3,9 @@
   #include <DHT.h>
   #define DHTPIN 2
   #define DHTTYPE DHT22
-  #include <LiquidCrystal.h>  
   DHT dht(DHTPIN, DHTTYPE);
-
-  //lcd
-  LiquidCrystal lcd(6, 7, 8, 9, 10, 11);
+  
+  #define LEDPIN 4  
   
   // dati mqtt
   #define APssid              "Telecom-75286748"              //wifi network ssid
@@ -22,20 +20,20 @@
   #define MQTTqos             2                       //quality of service for subscriptions and publishes
   #define esp8266reset        3                      //arduino pin connected to esp8266 reset pin (analog pin suggested due to higher impedance)
   #define esp8266alive        40                      //esp8266 keep alive interval (reset board if fail) (seconds)
-  #define esp8266serial       Serial                //Serial port to use to communicate to the esp8266 (Serial, Serial1, Serial2, etc)
-//  #define debugSerial Serial
+  #define esp8266serial       Serial2                //Serial port to use to communicate to the esp8266 (Serial, Serial1, Serial2, etc)
+  #define debugSerial Serial
   boolean connected = false;
 
 /*  ######################### DEFINIZIONI ALGORITMO ######################### */
 
-#define my_label 'a'
+#define my_label 'b'
 //#define sensor 100
 
 // numero in - neig.
-#define in_n 2
+#define in_n 1
 
 // lista degli in - neig.
-const char in_label[] = {'c', 'e'};
+const char in_label[] = {'e'};
 
 // contenitore dei messaggi in arrivo
 float data[in_n];
@@ -48,18 +46,12 @@ float state;
 float input;
 
 void setup() {
-//    debugSerial.begin(9600);
-//    debugSerial.println("-- STARTING...");
+    debugSerial.begin(9600);
+    debugSerial.println("-- STARTING...");
 
     dht.begin();
+    pinMode(LEDPIN, OUTPUT);
     
-    // lcd
-    // set up the LCD's number of columns and rows: 
-    lcd.begin(16, 2);
-    
-    lcd.setCursor(0, 0);
-    lcd.print("Starting...");
-
     delay(3000);
     
     esp8266serial.begin(9600);                          //
@@ -77,10 +69,10 @@ void setup() {
 }
 
 void onConnected() {                                //on connected callback
-//  debugSerial.println("-- CONNECTED");
+  debugSerial.println("-- CONNECTED");
   for (unsigned int i = 0; i < in_n; i++) {
-//    debugSerial.print("subscribing: " );
-//    debugSerial.println(in_label[i]);
+    debugSerial.print("subscribing: " );
+    debugSerial.println(in_label[i]);
     mqttSubscribe(String(in_label[i]) + "_d");
     mqttSubscribe(String(in_label[i]) + "_s");    
   }
@@ -89,13 +81,15 @@ void onConnected() {                                //on connected callback
   mqttPublish(String(my_label) + "_s", "B", 1);
   
   // un po' di ritardo per ricevere tutti i retains
-//  debugSerial.println("-- WAIT RETAINS...");
+  debugSerial.println("-- WAIT RETAINS...");
   long waitUntil = millis() + 10000;
   while (millis() < waitUntil) {
     do
       checkComm();
     while(!connected);
   }
+
+  digitalWrite(LEDPIN, HIGH);
   
   mqttPublish(String(my_label) + "_d", String(state), 1);  
   mqttPublish(String(my_label) + "_s", "R", 1);
@@ -109,12 +103,12 @@ void onConnected() {                                //on connected callback
 }
 
 void onMessage(String topic, String message) {      //new message callback
-//  debugSerial.print("incoming from '");
+  debugSerial.print("incoming from '");
   int last_slash_pos = topic.lastIndexOf("/");
   String sender = topic.substring(last_slash_pos + 1);
-//  debugSerial.print(sender);
-//  debugSerial.print("': ");
-//  debugSerial.println(message);
+  debugSerial.print(sender);
+  debugSerial.print("': ");
+  debugSerial.println(message);
   char sender_c[4];
   sender.toCharArray(sender_c, 4);
   for (unsigned int i = 0; i < in_n; i++) {
@@ -131,7 +125,8 @@ void onMessage(String topic, String message) {      //new message callback
 }
 
 void onDisconnected() {                             //on disconnected callback
-//  debugSerial.println("-- DISCONNECTED");
+  debugSerial.println("-- DISCONNECTED");
+  digitalWrite(LEDPIN, LOW);
 }
 
 float readInput() {
@@ -145,23 +140,8 @@ float readInput() {
 unsigned int count = 0;
 void loop() { 
     
-//  debugSerial.println("all data received, start new step");
-  
-  lcd.setCursor(0, 0);
-  lcd.print("                ");
-  lcd.setCursor(0, 1);
-  lcd.print("                ");
-
-  lcd.setCursor(0, 0);
-  lcd.print("S: ");
-  lcd.setCursor(3, 0);
-  lcd.print(state);
-  lcd.setCursor(0, 1);
-  lcd.print("T: ");
-  lcd.setCursor(3, 1);
-  lcd.print(input);
-
-  
+  debugSerial.println("all data received, start new step");
+    
   //aggiorno state
   unsigned int in_n_online = 0;
   for (unsigned int i = 0; i < in_n; i++) {
@@ -169,11 +149,6 @@ void loop() {
       in_n_online++;
   }  
   float weight = 1.0 / (in_n_online + 1);
-
-  lcd.setCursor(15, 0);
-  lcd.print(in_n_online);
-  lcd.setCursor(11, 1);
-  lcd.print(count);
   
   // newState: x(t+h)
   float newState = state;
@@ -187,12 +162,12 @@ void loop() {
   input = newInput;
   count++;
   
-//  debugSerial.println("end step");
+  debugSerial.println("end step");
       
   mqttPublish(String(my_label) + "_d", String(state), 1);
   mqttPublish(String(my_label) + "_s", "R", 1);  
   
-//  debugSerial.println("sending: " + String(state));
+  debugSerial.println("sending: " + String(state));
   
   for (unsigned int i = 0; i < in_n; i++) {
     if (sync[i] == 'R')
@@ -261,7 +236,7 @@ void checkComm() {
         esp8266serial.readBytes(cb, 1);
         if (cb[0] == 'r') {
             //ready
-//            debugSerial.println("-- ESP RESET");
+            debugSerial.println("-- ESP RESET");
             if (connected) {
                 connected = false;
                 onDisconnected();
