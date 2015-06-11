@@ -5,7 +5,8 @@
   #define DHTTYPE DHT22
   DHT dht(DHTPIN, DHTTYPE);
   
-  #define LEDPIN 4  
+  #define LEDPIN 4
+  #define INPIN 5
   
   // dati mqtt
   #define APssid              "Telecom-75286748"              //wifi network ssid
@@ -51,6 +52,7 @@ void setup() {
 
     dht.begin();
     pinMode(LEDPIN, OUTPUT);
+    pinMode(INPIN, OUTPUT);    
     
     delay(3000);
     
@@ -127,6 +129,7 @@ void onMessage(String topic, String message) {      //new message callback
 void onDisconnected() {                             //on disconnected callback
   debugSerial.println("-- DISCONNECTED");
   digitalWrite(LEDPIN, LOW);
+  digitalWrite(INPIN, LOW);  
 }
 
 float readInput() {
@@ -147,7 +150,9 @@ void loop() {
   for (unsigned int i = 0; i < in_n; i++) {
     if (sync[i] == 'R')
       in_n_online++;
-  }  
+  }
+  digitalWrite(INPIN, in_n_online > 0 ? HIGH : LOW);
+  
   float weight = 1.0 / (in_n_online + 1);
   
   // newState: x(t+h)
